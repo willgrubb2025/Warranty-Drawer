@@ -9,6 +9,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -35,6 +36,10 @@ type Appliance = {
   remindDays?: number; // how many days before the end to remind you
   notificationIds?: string[]; // the reminders scheduled on the phone
   photos?: Photo[];
+  model?: string;
+  serial?: string;
+  supportPhone?: string;
+  notes?: string;
 };
 
 const STORAGE_KEY = 'appliances';
@@ -171,6 +176,18 @@ async function cancelReminders(a: Appliance) {
 
 // ---------- screen ----------
 
+// One label/value line on the detail screen. Long-press the value to copy it.
+function InfoRow({ label, value, link }: { label: string; value: string; link?: boolean }) {
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={[styles.infoValue, link && { color: '#2f4bd8' }]} selectable>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const [items, setItems] = useState<Appliance[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -181,6 +198,10 @@ export default function HomeScreen() {
   const [date, setDate] = useState(todayString());
   const [months, setMonths] = useState(12);
   const [remindDays, setRemindDays] = useState(30);
+  const [model, setModel] = useState('');
+  const [serial, setSerial] = useState('');
+  const [supportPhone, setSupportPhone] = useState('');
+  const [notes, setNotes] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null); // null = adding a new one
 
   // Detail screen
@@ -210,6 +231,10 @@ export default function HomeScreen() {
     setDate(todayString());
     setMonths(12);
     setRemindDays(30);
+    setModel('');
+    setSerial('');
+    setSupportPhone('');
+    setNotes('');
     setEditingId(null);
     setShowForm(false);
   }
@@ -221,6 +246,10 @@ export default function HomeScreen() {
     setDate(a.purchaseDate);
     setMonths(a.warrantyMonths);
     setRemindDays(a.remindDays ?? 30);
+    setModel(a.model ?? '');
+    setSerial(a.serial ?? '');
+    setSupportPhone(a.supportPhone ?? '');
+    setNotes(a.notes ?? '');
     setEditingId(a.id);
     setOpenId(null);
     setShowForm(true);
@@ -242,6 +271,10 @@ export default function HomeScreen() {
       remindDays,
       notificationIds: [],
       photos: existing?.photos ?? [],
+      model: model.trim(),
+      serial: serial.trim(),
+      supportPhone: supportPhone.trim(),
+      notes: notes.trim(),
     };
 
     // Old reminders may have the wrong date now, so replace them.
@@ -347,6 +380,7 @@ export default function HomeScreen() {
         </Text>
 
         {showForm ? (
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
           <View style={styles.form}>
             <Text style={styles.formTitle}>{editingId ? 'Edit appliance' : 'New appliance'}</Text>
             <Text style={styles.label}>Appliance</Text>
@@ -404,6 +438,26 @@ export default function HomeScreen() {
               ))}
             </View>
 
+            <Text style={[styles.formTitle, { fontSize: 15, marginTop: 14 }]}>For warranty claims (optional)</Text>
+            <Text style={styles.label}>Model number</Text>
+            <TextInput style={styles.input} placeholder="e.g. SHE53C85N" placeholderTextColor="#8a93a8" value={model} onChangeText={setModel} autoCapitalize="characters" />
+
+            <Text style={styles.label}>Serial number</Text>
+            <TextInput style={styles.input} placeholder="Usually on a sticker on the back or inside the door" placeholderTextColor="#8a93a8" value={serial} onChangeText={setSerial} autoCapitalize="characters" />
+
+            <Text style={styles.label}>Support phone number</Text>
+            <TextInput style={styles.input} placeholder="From the manual or the brand's website" placeholderTextColor="#8a93a8" value={supportPhone} onChangeText={setSupportPhone} keyboardType="phone-pad" />
+
+            <Text style={styles.label}>Notes</Text>
+            <TextInput
+              style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]}
+              placeholder="Extended plan, claim numbers, repair history…"
+              placeholderTextColor="#8a93a8"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+            />
+
             <View style={styles.row}>
               <Pressable style={[styles.button, styles.secondary]} onPress={resetForm}>
                 <Text style={styles.secondaryText}>Cancel</Text>
@@ -413,12 +467,14 @@ export default function HomeScreen() {
               </Pressable>
             </View>
           </View>
+          </ScrollView>
         ) : (
           <Pressable style={[styles.button, { flex: 0, marginBottom: 16 }]} onPress={() => setShowForm(true)}>
             <Text style={styles.buttonText}>+ Add appliance</Text>
           </Pressable>
         )}
 
+        {!showForm && (
         <FlatList
           data={items}
           keyExtractor={(a) => a.id}
@@ -458,6 +514,7 @@ export default function HomeScreen() {
             </View>
           }
         />
+        )}
       </KeyboardAvoidingView>
 
       {/* Appliance detail screen */}
@@ -484,6 +541,24 @@ export default function HomeScreen() {
                   <Text style={styles.secondaryText}>Edit details</Text>
                 </Pressable>
               </View>
+
+              {(open.model || open.serial || open.supportPhone || open.notes) ? (
+                <>
+                  <Text style={styles.section}>For warranty claims</Text>
+                  <View style={styles.form}>
+                    {!!open.model && <InfoRow label="Model" value={open.model} />}
+                    {!!open.serial && <InfoRow label="Serial" value={open.serial} />}
+                    {!!open.supportPhone && (
+                      <Pressable onPress={() => Linking.openURL(`tel:${open.supportPhone!.replace(/[^\d+]/g, '')}`)}>
+                        <InfoRow label="Support" value={`📞 ${open.supportPhone}`} link />
+                      </Pressable>
+                    )}
+                    {!!open.notes && <InfoRow label="Notes" value={open.notes} />}
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.hint}>Add the model and serial number with Edit details. Support lines ask for both.</Text>
+              )}
 
               <Text style={styles.section}>Receipts & manuals</Text>
               <View style={styles.form}>
@@ -545,6 +620,9 @@ const styles = StyleSheet.create({
   section: { fontSize: 13, fontWeight: '700', color: '#5d6680', textTransform: 'uppercase', letterSpacing: 1 },
   form: { backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 16, gap: 6 },
   formTitle: { fontSize: 18, fontWeight: '800', color: '#141a2b' },
+  infoRow: { flexDirection: 'row', gap: 12, paddingVertical: 6 },
+  infoLabel: { width: 64, fontSize: 13, fontWeight: '600', color: '#5d6680' },
+  infoValue: { flex: 1, fontSize: 15, color: '#141a2b' },
   label: { fontSize: 13, fontWeight: '600', color: '#5d6680', marginTop: 6 },
   input: { borderWidth: 1, borderColor: '#d5dbe7', borderRadius: 10, padding: 10, fontSize: 16, color: '#141a2b', backgroundColor: '#f7f8fb' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
