@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker, { DateTimePickerAndroid, DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
@@ -80,12 +81,19 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Today's date as YYYY-MM-DD in your own time zone.
-function todayString() {
-  const d = new Date();
+// A date as YYYY-MM-DD in your own time zone.
+function toDateString(d: Date) {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
+}
+function todayString() {
+  return toDateString(new Date());
+}
+// Turn YYYY-MM-DD back into a Date (local time, not UTC).
+function fromDateString(s: string) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
 // The day the warranty runs out.
@@ -327,8 +335,34 @@ export default function HomeScreen() {
             <Text style={styles.label}>Bought from</Text>
             <TextInput style={styles.input} placeholder="e.g. Home Depot" placeholderTextColor="#8a93a8" value={store} onChangeText={setStore} />
 
-            <Text style={styles.label}>Purchase date (YYYY-MM-DD)</Text>
-            <TextInput style={styles.input} value={date} onChangeText={setDate} keyboardType="numbers-and-punctuation" />
+            <Text style={styles.label}>Purchase date</Text>
+            {Platform.OS === 'ios' ? (
+              <View style={{ alignItems: 'flex-start' }}>
+                <DateTimePicker
+                  value={fromDateString(date)}
+                  mode="date"
+                  display="compact"
+                  maximumDate={new Date()}
+                  onChange={(_e: DateTimePickerEvent, picked?: Date) => picked && setDate(toDateString(picked))}
+                />
+              </View>
+            ) : (
+              <Pressable
+                style={styles.input}
+                onPress={() =>
+                  DateTimePickerAndroid.open({
+                    value: fromDateString(date),
+                    mode: 'date',
+                    maximumDate: new Date(),
+                    onChange: (e: DateTimePickerEvent, picked?: Date) => {
+                      if (e.type === 'set' && picked) setDate(toDateString(picked));
+                    },
+                  })
+                }
+              >
+                <Text style={{ fontSize: 16, color: '#141a2b' }}>📅 {fromDateString(date).toLocaleDateString()}</Text>
+              </Pressable>
+            )}
 
             <Text style={styles.label}>Warranty length</Text>
             <View style={styles.chips}>
@@ -419,7 +453,7 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.form}>
-                <Text style={styles.cardMeta}>Bought {open.purchaseDate}{open.store ? ` at ${open.store}` : ''}</Text>
+                <Text style={styles.cardMeta}>Bought {fromDateString(open.purchaseDate).toLocaleDateString()}{open.store ? ` at ${open.store}` : ''}</Text>
                 <Text style={styles.cardMeta}>
                   Warranty ends {endDate(open).toLocaleDateString()} · {statusFor(open).label}
                 </Text>
