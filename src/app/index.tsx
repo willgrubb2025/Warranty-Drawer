@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker, { DateTimePickerAndroid, DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import * as Calendar from 'expo-calendar/legacy';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
@@ -40,6 +41,7 @@ type Appliance = {
   serial?: string;
   supportPhone?: string;
   notes?: string;
+  calendarEventId?: string; // the event in your phone's calendar, if you added one
 };
 
 const STORAGE_KEY = 'appliances';
@@ -174,6 +176,76 @@ async function cancelReminders(a: Appliance) {
   }
 }
 
+// ---------- calendar ----------
+
+// The all-day calendar event for the day the warranty ends.
+function calendarDetails(a: Appliance) {
+  const start = endDate(a);
+  start.setHours(0, 0, 0, 0);
+  const stop = new Date(start);
+  stop.setDate(stop.getDate() + 1);
+  const lines = [
+    a.store && `Bought from ${a.store} on ${fromDateString(a.purchaseDate).toLocaleDateString()}`,
+    a.model && `Model: ${a.model}`,
+    a.serial && `Serial: ${a.serial}`,
+    a.supportPhone && `Support: ${a.supportPhone}`,
+    'Receipt and manual are in Warranty Drawer.',
+  ].filter(Boolean);
+  return {
+    title: `${a.name} warranty ends`,
+    startDate: start,
+    endDate: stop,
+    allDay: true,
+    notes: lines.join('\n'),
+    alarms: [{ relativeOffset: -(a.remindDays ?? 30) * 24 * 60 }], // minutes before
+  };
+}
+
+// Find a calendar on the phone we're allowed to add events to.
+async function pickCalendarId() {
+  if (Platform.OS === 'ios') {
+    const def = await Calendar.getDefaultCalendarAsync();
+    return def.id;
+  }
+  const cals = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  const writable = cals.find((c) => c.isPrimary && c.allowsModifications) ?? cals.find((c) => c.allowsModifications);
+  return writable?.id ?? null;
+}
+
+// Returns the new event's id, or null if it couldn't be added.
+async function addCalendarEvent(a: Appliance) {
+  const perm = await Calendar.requestCalendarPermissionsAsync();
+  if (!perm.granted) {
+    Alert.alert('Calendar is off', 'Allow calendar access for Expo Go in your phone settings to add warranty dates.');
+    return null;
+  }
+  const calendarId = await pickCalendarId();
+  if (!calendarId) {
+    Alert.alert('No calendar found', 'Set up a calendar on your phone first, then try again.');
+    return null;
+  }
+  return Calendar.createEventAsync(calendarId, calendarDetails(a));
+}
+
+// Keep an existing calendar event in step with edits. Ignores events you deleted yourself.
+async function updateCalendarEvent(a: Appliance) {
+  if (!a.calendarEventId) return;
+  try {
+    await Calendar.updateEventAsync(a.calendarEventId, calendarDetails(a));
+  } catch {
+    // The event was removed from the calendar app; leave it.
+  }
+}
+
+async function removeCalendarEvent(a: Appliance) {
+  if (!a.calendarEventId) return;
+  try {
+    await Calendar.deleteEventAsync(a.calendarEventId);
+  } catch {
+    // Already gone.
+  }
+}
+
 // ---------- screen ----------
 
 // One label/value line on the detail screen. Long-press the value to copy it.
@@ -275,10 +347,12 @@ export default function HomeScreen() {
       serial: serial.trim(),
       supportPhone: supportPhone.trim(),
       notes: notes.trim(),
+      calendarEventId: existing?.calendarEventId,
     };
 
     // Old reminders may have the wrong date now, so replace them.
     if (existing) await cancelReminders(existing);
+    if (existing) await updateCalendarEvent(appliance);
     const allowed = await askPermission();
     if (allowed) {
       appliance.notificationIds = await scheduleReminders(appliance);
@@ -306,6 +380,7 @@ export default function HomeScreen() {
         style: 'destructive',
         onPress: async () => {
           await cancelReminders(a);
+          await removeCalendarEvent(a);
           (a.photos ?? []).forEach(removePhotoFile);
           setOpenId(null);
           await saveList(items.filter((i) => i.id !== a.id));
@@ -336,6 +411,32 @@ export default function HomeScreen() {
       await saveList(items.map((i) => (i.id === open.id ? updated : i)));
     } catch {
       Alert.alert("Couldn't save that photo", 'Try again, or pick a different photo.');
+    }
+  }
+
+  async function addToCalendar(a: Appliance) {
+    let firstError = '';
+    try {
+      const eventId = await addCalendarEvent(a);
+      if (!eventId) return;
+      await saveList(items.map((i) => (i.id === a.id ? { ...i, calendarEventId: eventId } : i)));
+      Alert.alert('Added to your calendar', `"${a.name} warranty ends" is on ${endDate(a).toLocaleDateString()}, with an alert ${a.remindDays ?? 30} days before.`);
+      return;
+    } catch (e: any) {
+      firstError = String(e?.message ?? e);
+      console.log('createEventAsync failed:', firstError);
+    }
+
+    // Second try: open the phone's own "New Event" screen, already filled in.
+    try {
+      const result = await Calendar.createEventInCalendarAsync(calendarDetails(a));
+      if (result.action === 'saved' || result.action === 'done') {
+        await saveList(items.map((i) => (i.id === a.id ? { ...i, calendarEventId: result.id ?? 'added' } : i)));
+      }
+    } catch (e: any) {
+      const secondError = String(e?.message ?? e);
+      console.log('createEventInCalendarAsync failed:', secondError);
+      Alert.alert("Couldn't add it", `${firstError}\n\n${secondError}`);
     }
   }
 
@@ -537,9 +638,20 @@ export default function HomeScreen() {
                 <Text style={styles.cardMeta}>
                   {(open.notificationIds?.length ?? 0) > 0 ? `Reminder ${open.remindDays ?? 30} days before, and on the last day` : 'No reminders set'}
                 </Text>
-                <Pressable style={[styles.button, styles.secondary, { flex: 0, marginTop: 10 }]} onPress={() => startEdit(open)}>
-                  <Text style={styles.secondaryText}>Edit details</Text>
-                </Pressable>
+                <View style={styles.row}>
+                  <Pressable style={[styles.button, styles.secondary]} onPress={() => startEdit(open)}>
+                    <Text style={styles.secondaryText}>Edit details</Text>
+                  </Pressable>
+                  {open.calendarEventId ? (
+                    <View style={[styles.button, styles.secondary, { borderColor: '#1d7a4a' }]}>
+                      <Text style={[styles.secondaryText, { color: '#1d7a4a' }]}>✓ In calendar</Text>
+                    </View>
+                  ) : (
+                    <Pressable style={styles.button} onPress={() => addToCalendar(open)}>
+                      <Text style={styles.buttonText}>Add to calendar</Text>
+                    </Pressable>
+                  )}
+                </View>
               </View>
 
               {(open.model || open.serial || open.supportPhone || open.notes) ? (
