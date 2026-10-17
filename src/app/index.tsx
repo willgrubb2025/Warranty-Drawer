@@ -181,6 +181,7 @@ export default function HomeScreen() {
   const [date, setDate] = useState(todayString());
   const [months, setMonths] = useState(12);
   const [remindDays, setRemindDays] = useState(30);
+  const [editingId, setEditingId] = useState<string | null>(null); // null = adding a new one
 
   // Detail screen
   const [openId, setOpenId] = useState<string | null>(null);
@@ -202,47 +203,65 @@ export default function HomeScreen() {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
   }
 
-  async function addAppliance() {
+  // Clear the form and close it.
+  function resetForm() {
+    setName('');
+    setStore('');
+    setDate(todayString());
+    setMonths(12);
+    setRemindDays(30);
+    setEditingId(null);
+    setShowForm(false);
+  }
+
+  // Open the form filled in with an existing appliance's details.
+  function startEdit(a: Appliance) {
+    setName(a.name);
+    setStore(a.store);
+    setDate(a.purchaseDate);
+    setMonths(a.warrantyMonths);
+    setRemindDays(a.remindDays ?? 30);
+    setEditingId(a.id);
+    setOpenId(null);
+    setShowForm(true);
+  }
+
+  // Saves a new appliance, or your changes to an existing one.
+  async function saveAppliance() {
     if (!name.trim()) {
       Alert.alert('Add a name', 'What appliance is this? For example: Dishwasher.');
       return;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      Alert.alert('Check the date', 'Use the format YYYY-MM-DD, like 2026-03-15.');
-      return;
-    }
+    const existing = editingId ? items.find((i) => i.id === editingId) : undefined;
     const appliance: Appliance = {
-      id: Date.now().toString(),
+      id: existing?.id ?? Date.now().toString(),
       name: name.trim(),
       store: store.trim(),
       purchaseDate: date,
       warrantyMonths: months,
       remindDays,
       notificationIds: [],
-      photos: [],
+      photos: existing?.photos ?? [],
     };
 
+    // Old reminders may have the wrong date now, so replace them.
+    if (existing) await cancelReminders(existing);
     const allowed = await askPermission();
     if (allowed) {
       appliance.notificationIds = await scheduleReminders(appliance);
     }
-    await saveList([...items, appliance]);
-
-    setName('');
-    setStore('');
-    setDate(todayString());
-    setMonths(12);
-    setRemindDays(30);
-    setShowForm(false);
+    await saveList(existing ? items.map((i) => (i.id === existing.id ? appliance : i)) : [...items, appliance]);
+    resetForm();
 
     // Tell the person what happened with the reminders.
+    const title = existing ? 'Changes saved' : 'Saved';
     const count = appliance.notificationIds?.length ?? 0;
     if (!allowed) {
-      Alert.alert('Saved without reminders', 'Notifications are turned off for Expo Go. Turn them on in your phone settings to get reminders.');
+      Alert.alert(`${title} without reminders`, 'Notifications are turned off for Expo Go. Turn them on in your phone settings to get reminders.');
     } else if (count === 0) {
-      Alert.alert('Saved', 'This warranty has already ended, so no reminders were set.');
+      Alert.alert(title, 'This warranty has already ended, so no reminders were set.');
     } else {
-      Alert.alert('Saved', count === 2 ? 'You will get a reminder before the warranty ends and another on the last day.' : 'The early reminder date has passed, so you will get one reminder on the last day.');
+      Alert.alert(title, count === 2 ? 'You will get a reminder before the warranty ends and another on the last day.' : 'The early reminder date has passed, so you will get one reminder on the last day.');
     }
   }
 
@@ -329,6 +348,7 @@ export default function HomeScreen() {
 
         {showForm ? (
           <View style={styles.form}>
+            <Text style={styles.formTitle}>{editingId ? 'Edit appliance' : 'New appliance'}</Text>
             <Text style={styles.label}>Appliance</Text>
             <TextInput style={styles.input} placeholder="e.g. Dishwasher" placeholderTextColor="#8a93a8" value={name} onChangeText={setName} />
 
@@ -385,11 +405,11 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.row}>
-              <Pressable style={[styles.button, styles.secondary]} onPress={() => setShowForm(false)}>
+              <Pressable style={[styles.button, styles.secondary]} onPress={resetForm}>
                 <Text style={styles.secondaryText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.button} onPress={addAppliance}>
-                <Text style={styles.buttonText}>Save</Text>
+              <Pressable style={styles.button} onPress={saveAppliance}>
+                <Text style={styles.buttonText}>{editingId ? 'Save changes' : 'Save'}</Text>
               </Pressable>
             </View>
           </View>
@@ -460,6 +480,9 @@ export default function HomeScreen() {
                 <Text style={styles.cardMeta}>
                   {(open.notificationIds?.length ?? 0) > 0 ? `Reminder ${open.remindDays ?? 30} days before, and on the last day` : 'No reminders set'}
                 </Text>
+                <Pressable style={[styles.button, styles.secondary, { flex: 0, marginTop: 10 }]} onPress={() => startEdit(open)}>
+                  <Text style={styles.secondaryText}>Edit details</Text>
+                </Pressable>
               </View>
 
               <Text style={styles.section}>Receipts & manuals</Text>
@@ -521,6 +544,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 15, color: '#5d6680', marginBottom: 16 },
   section: { fontSize: 13, fontWeight: '700', color: '#5d6680', textTransform: 'uppercase', letterSpacing: 1 },
   form: { backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 16, gap: 6 },
+  formTitle: { fontSize: 18, fontWeight: '800', color: '#141a2b' },
   label: { fontSize: 13, fontWeight: '600', color: '#5d6680', marginTop: 6 },
   input: { borderWidth: 1, borderColor: '#d5dbe7', borderRadius: 10, padding: 10, fontSize: 16, color: '#141a2b', backgroundColor: '#f7f8fb' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
