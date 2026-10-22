@@ -1,56 +1,57 @@
-# Welcome to your Expo app 👋
+# Warranty Drawer
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile app for keeping track of appliance warranties, so you never miss the last day to make a claim.
 
-## Get started
+Add an appliance once with when and where you bought it and how long its warranty lasts. Warranty Drawer works out when the coverage ends, reminds you before it does, and keeps the receipt, manual and serial number in one place for when something breaks.
 
-1. Install dependencies
+## Features
 
-   ```bash
-   npm install
-   ```
+- **Warranty tracking:** add, edit and delete appliances with the store, purchase date (native date picker) and warranty length. The list is sorted by which warranty ends first.
+- **Status at a glance:** each item shows how many days or months are left, color-coded from "plenty of time" to "ending soon" to "expired".
+- **Reminders:** local notifications go out a set number of days before the warranty ends (7, 14, 30 or 60) and again on the last day. They're rescheduled automatically when you edit an item.
+- **Calendar integration:** add an all-day "warranty ends" event, with an alert and the item's details, to the phone's calendar. The event stays in sync when you edit or delete the item.
+- **Receipts and manuals:** take photos or pick them from your library and tag them as Receipt, Manual or Other. Photos are copied into the app's own storage, so they're kept even if you delete them from your camera roll.
+- **Product details:** model number, serial number, support phone (tap to call) and free-form notes for extended plans or claim history.
+- **Works offline:** everything is stored on the device. No account or server is needed.
 
-2. Start the app
+## Tech stack
 
-   ```bash
-   npx expo start
-   ```
+- [React Native](https://reactnative.dev/) + [Expo](https://expo.dev/) (SDK 57), written in **TypeScript**
+- **Expo Router** for file-based navigation with native tabs
+- `AsyncStorage` for saving data on the device
+- `expo-notifications` for scheduled reminders
+- `expo-calendar` for calendar events
+- `expo-image-picker` + `expo-file-system` for capturing and storing photos
+- `@react-native-community/datetimepicker` for date entry
 
-In the output, you'll find options to open the app in a
+## Project structure
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+src/
+  app/          screens (Expo Router: each file is a route)
+    index.tsx   main warranty list, add/edit form and detail view
+    _layout.tsx app layout and tabs
+  components/   reusable UI components
+  hooks/        theme and color-scheme hooks
+  constants/    theme colors and fonts
+assets/         app icon, splash screen and images
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Running it locally
 
-### Other setup steps
+You need [Node.js](https://nodejs.org/) and the [Expo Go](https://expo.dev/go) app on your phone (or an iOS simulator or Android emulator).
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+npm install
+npx expo start
+```
 
-## Learn more
+Scan the QR code with Expo Go (Android) or the Camera app (iOS) to open the app.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Author
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Built by **William Grubb** ([@willgrubb2025](https://github.com/willgrubb2025)), a software engineering student at Liberty University.
 
-## Join the community
+## License
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+[MIT](LICENSE)
